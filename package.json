@@ -4,7 +4,7 @@
 	"private": true,
 	"license": "MIT",
 	"scripts": {
-		"start": "npx tsc -w",
+		"start": "nodemon",
 		"build": "tsc"
 	},
 	"dependencies": {

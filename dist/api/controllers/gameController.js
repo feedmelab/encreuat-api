@@ -69,26 +69,6 @@ var GameController = /** @class */ (function () {
             });
         });
     };
-    GameController.prototype.checkGame = function (io, socket, message) {
-        return __awaiter(this, void 0, void 0, function () {
-            var gameRoom;
-            return __generator(this, function (_a) {
-                gameRoom = this.getSocketGameRoom(socket);
-                socket.to(gameRoom).emit("on_game_check", message);
-                return [2 /*return*/];
-            });
-        });
-    };
-    GameController.prototype.gameWin = function (io, socket, message) {
-        return __awaiter(this, void 0, void 0, function () {
-            var gameRoom;
-            return __generator(this, function (_a) {
-                gameRoom = this.getSocketGameRoom(socket);
-                socket.to(gameRoom).emit("on_game_win", message);
-                return [2 /*return*/];
-            });
-        });
-    };
     __decorate([
         socket_controllers_1.OnMessage("update_game"),
         __param(0, socket_controllers_1.SocketIO()),
@@ -98,24 +78,6 @@ var GameController = /** @class */ (function () {
         __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
         __metadata("design:returntype", Promise)
     ], GameController.prototype, "updateGame");
-    __decorate([
-        socket_controllers_1.OnMessage("check_game"),
-        __param(0, socket_controllers_1.SocketIO()),
-        __param(1, socket_controllers_1.ConnectedSocket()),
-        __param(2, socket_controllers_1.MessageBody()),
-        __metadata("design:type", Function),
-        __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
-        __metadata("design:returntype", Promise)
-    ], GameController.prototype, "checkGame");
-    __decorate([
-        socket_controllers_1.OnMessage("game_win"),
-        __param(0, socket_controllers_1.SocketIO()),
-        __param(1, socket_controllers_1.ConnectedSocket()),
-        __param(2, socket_controllers_1.MessageBody()),
-        __metadata("design:type", Function),
-        __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
-        __metadata("design:returntype", Promise)
-    ], GameController.prototype, "gameWin");
     GameController = __decorate([
         socket_controllers_1.SocketController()
     ], GameController);

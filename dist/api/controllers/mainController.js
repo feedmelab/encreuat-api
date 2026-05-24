@@ -1,4 +1,3 @@
-"use strict";
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -11,30 +10,25 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-exports.__esModule = true;
-exports.MainController = void 0;
-var socket_controllers_1 = require("socket-controllers");
-var socket_io_1 = require("socket.io");
-var MainController = /** @class */ (function () {
-    function MainController() {
-    }
-    MainController.prototype.onConnection = function (socket, io) {
+import { ConnectedSocket, OnConnect, SocketController, SocketIO } from "socket-controllers";
+import { Socket, Server } from "socket.io";
+let MainController = class MainController {
+    onConnection(socket, io) {
         console.log("Nou Socket conectat: ", socket.id);
-        socket.on("custom_event", function (data) {
+        socket.on("custom_event", (data) => {
             console.log("Data: ", data);
         });
-    };
-    __decorate([
-        socket_controllers_1.OnConnect(),
-        __param(0, socket_controllers_1.ConnectedSocket()),
-        __param(1, socket_controllers_1.SocketIO()),
-        __metadata("design:type", Function),
-        __metadata("design:paramtypes", [socket_io_1.Socket, socket_io_1.Server]),
-        __metadata("design:returntype", void 0)
-    ], MainController.prototype, "onConnection");
-    MainController = __decorate([
-        socket_controllers_1.SocketController()
-    ], MainController);
-    return MainController;
-}());
-exports.MainController = MainController;
+    }
+};
+__decorate([
+    OnConnect(),
+    __param(0, ConnectedSocket()),
+    __param(1, SocketIO()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Socket, Server]),
+    __metadata("design:returntype", void 0)
+], MainController.prototype, "onConnection", null);
+MainController = __decorate([
+    SocketController()
+], MainController);
+export { MainController };

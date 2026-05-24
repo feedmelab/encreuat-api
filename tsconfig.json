@@ -3,6 +3,11 @@
     "noImplicitAny": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "types": ["node"],
+    "skipLibCheck": true,
     "outDir": "dist"
   }
 }

@@ -1,30 +1,28 @@
 #!/usr/bin/env node
-"use strict";
 /**
  * Module dependencies.
  */
-exports.__esModule = true;
-require("reflect-metadata");
-var app_1 = require("./app");
+import "reflect-metadata";
+import app from "./app";
 var debug = require("debug")("socketio-server:server");
-var http = require("http");
-var socket_1 = require("./socket");
+import * as http from "http";
+import socketServer from "./socket";
 /**
  * Get port from environment and store in Express.
  */
 var port = normalizePort(process.env.PORT || "9000");
-app_1["default"].set("port", port);
+app.set("port", port);
 /**
  * Create HTTP server.
  */
-var server = http.createServer(app_1["default"]);
+var server = http.createServer(app);
 /**
  * Listen on provided port, on all network interfaces.
  */
 server.listen(port);
 server.on("error", onError);
 server.on("listening", onListening);
-var io = socket_1["default"](server);
+const io = socketServer(server);
 /**
  * Normalize a port into a number, string, or false.
  */

@@ -1,6 +1,7 @@
 export interface JoinGameMessage {
 	roomId: string;
 	playerName?: string;
+	difficulty?: "easy" | "medium" | "hard";
 }
 
 export interface CancelGameMessage {
@@ -8,6 +9,11 @@ export interface CancelGameMessage {
 }
 
 export interface UpdateGameMessage {
+	chances: Array<Array<string | number | null>>;
+	times: Array<Array<string | number | null>>;
+}
+
+export interface GameFinishedEvent {
 	chances: Array<Array<string | number | null>>;
 	times: Array<Array<string | number | null>>;
 }

@@ -28,6 +28,13 @@ let GameController = GameController_1 = class GameController {
     async updateGame(io, socket, message) {
         const gameRoom = this.getSocketGameRoom(socket);
         socket.to(gameRoom).emit("on_game_update", message);
+        const faseFromState = Number(message?.chances?.[5]?.[0]) || 0;
+        const isLastRoundFinished = message?.chances?.[4]?.every((r) => r !== null) || false;
+        const isGameFinished = faseFromState >= 5 || isLastRoundFinished;
+        if (isGameFinished && gameRoom) {
+            const payload = { chances: message.chances, times: message.times };
+            io.to(gameRoom).emit("game_finished", payload);
+        }
     }
     reportMatchWinner(io, message) {
         const winnerName = String(message.winnerName || "").trim();

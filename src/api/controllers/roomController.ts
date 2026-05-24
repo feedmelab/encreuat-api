@@ -5,12 +5,190 @@ import { CancelGameMessage, JoinGameMessage } from "../../types/events";
 
 @SocketController()
 export class RoomController {
+	private readonly DEFAULT_DIFFICULTY: "easy" | "medium" | "hard" = "medium";
 	private readonly DEF_CACHE_TTL_MS = 1000 * 60 * 30;
+	private readonly WORD_POOL_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
 	private readonly DEF_FETCH_TIMEOUT_MS = 7000;
 	private readonly DEF_FETCH_RETRIES = 2;
+	private readonly WORD_POOL_SOURCE_URL =
+		"https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/master/frequencies/frequencies-dict-lemmas.txt";
 	private readonly definitionCache = new Map<string, { nom: string; descripcio: string; expiresAt: number }>();
 	private readonly roomPlayers = new Map<string, { A?: string; B?: string }>();
 	private readonly roomStatus = new Map<string, "waiting" | "started">();
+	private readonly roomDifficulty = new Map<string, "easy" | "medium" | "hard">();
+	private wordPoolCache: { words: string[]; expiresAt: number } | null = null;
+	private readonly fallbackWords = [
+		"camí",
+		"rossinyol",
+		"conill",
+		"porró",
+		"repercutir",
+		"emmirallar",
+		"organisme",
+		"setrill",
+		"mussol",
+		"colze",
+		"mànec",
+		"atzucac",
+		"rèmora",
+		"cendrer",
+		"cotó",
+		"esquirol",
+		"esquella",
+		"paràsit",
+		"guerrer",
+		"préssec",
+		"cirera",
+		"insecte",
+		"tropical",
+		"comarca",
+		"tractat",
+		"corona",
+		"reguitzell",
+		"municipi",
+		"localitat",
+		"pantà",
+		"ecumènic",
+		"musical",
+		"reflexionar",
+		"anagrama",
+		"mantell",
+		"república",
+		"vapor",
+		"barretina",
+		"edifici",
+		"cosir",
+		"frustrar",
+		"lleuger",
+		"pregunta",
+		"ametlla",
+		"encens",
+		"sucre",
+		"dolor",
+		"radi",
+		"poma",
+		"genoll",
+		"llebre",
+		"pop",
+		"crustaci",
+		"anell",
+		"cambra",
+		"copular",
+		"gerani",
+		"capsa",
+		"camell",
+		"embarbussament",
+		"rovellola",
+		"espurna",
+		"guisat",
+		"olivada",
+		"vesicant",
+		"esplendor",
+		"taronjada",
+		"sotagola",
+		"gos",
+		"algutzir",
+		"beneit",
+		"ximple",
+		"poca-solta",
+	];
+
+	private readonly stopWords = new Set([
+		"de",
+		"la",
+		"el",
+		"els",
+		"les",
+		"que",
+		"per",
+		"amb",
+		"una",
+		"uns",
+		"unes",
+		"com",
+		"molt",
+		"més",
+		"menys",
+		"això",
+		"aquest",
+		"aquesta",
+		"aquests",
+		"aquestes",
+		"ser",
+		"haver",
+		"tenir",
+		"anar",
+		"fer",
+		"dir",
+		"estar",
+		"sóc",
+		"som",
+		"són",
+		"era",
+		"eren",
+		"estat",
+		"passar",
+		"poder",
+		"voler",
+		"donar",
+		"veure",
+		"jo",
+		"tu",
+		"ell",
+		"ella",
+		"nosaltres",
+		"vosaltres",
+		"ells",
+		"elles",
+	]);
+
+	private decodeHtmlEntities(value: string): string {
+		return value
+			.replace(/&nbsp;/gi, " ")
+			.replace(/&amp;/gi, "&")
+			.replace(/&quot;/gi, '"')
+			.replace(/&#39;/gi, "'")
+			.replace(/&apos;/gi, "'")
+			.replace(/&lt;/gi, "<")
+			.replace(/&gt;/gi, ">");
+	}
+
+	private sanitizeHtmlToText(value: string): string {
+		return this.decodeHtmlEntities(
+			String(value || "")
+				.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+				.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+				.replace(/<a\b[^>]*>(.*?)<\/a>/gi, "$1")
+				.replace(/javascript:[^"'\s>]*/gi, " ")
+				.replace(/<\/?[^>]+(>|$)/g, " ")
+				.replace(/\s+/g, " ")
+		).trim();
+	}
+
+	private removeDefinitionNumbering(value: string): string {
+		return String(value || "")
+			.replace(/\(\s*\d+\s*\)/g, " ")
+			.replace(/(^|[;:.!?]\s*)\d+\s*(?=[A-Za-zÀ-ÖØ-öø-ÿ])/gu, "$1")
+			.replace(/\b\d+\b/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	private hasNumericMarkers(value: string): boolean {
+		return /\b\d+\b/.test(String(value || ""));
+	}
+
+	private isDualGenderForm(word: string): boolean {
+		const parts = String(word || "")
+			.toLowerCase()
+			.split("-")
+			.map((p) => p.trim())
+			.filter(Boolean);
+		if (parts.length !== 2) return false;
+		const [first, second] = parts;
+		if (!/^[a-zà-ÿ·'’]+$/u.test(first) || !/^[a-zà-ÿ·'’]+$/u.test(second)) return false;
+		return first.length >= 4 && second.length >= 4 && !first.endsWith("a") && second.endsWith("a");
+	}
 
 	private extractFieldFromHtml(html: string) {
 		const afterLast = (value: string, delimiter: string) => {
@@ -39,14 +217,22 @@ export class RoomController {
 			.replace(",", "")
 			.trim();
 
-		const descripcio = afterLast(replaced, 'body">')
+		const rawDescription = afterLast(replaced, 'body">')
 			.split("</span>")[0]
-			.replace(/['"]+/g, "")
-			.replace(/<I>/g, "")
-			.replace(/<\/I>/g, "")
 			.trim();
 
-		return { nom, descripcio };
+		const nomNet = this.sanitizeHtmlToText(nom)
+			.replace(",", "")
+			.replace(/\d+/g, "")
+			.replace(/\s*-\s*/g, "-")
+			.trim();
+		let descripcio = this.sanitizeHtmlToText(rawDescription);
+		descripcio = this.removeDefinitionNumbering(descripcio);
+		if (this.isDualGenderForm(nomNet) && !this.hasNumericMarkers(descripcio)) {
+			descripcio = `${descripcio} Escriu la resposta amb les dues formes de gènere.`;
+		}
+
+		return { nom: nomNet, descripcio };
 	}
 
 	private async fetchDefinitionWithRetry(paraula: string) {
@@ -79,11 +265,12 @@ export class RoomController {
 		throw lastError || new Error(`Error desconegut recuperant definició de ${paraula}`);
 	}
 
-	private getRoomsCatalog(io: Server): Array<{ roomId: string; status: "waiting" | "started"; players: number }> {
+	private getRoomsCatalog(io: Server): Array<{ roomId: string; status: "waiting" | "started"; players: number; difficulty: "easy" | "medium" | "hard" }> {
 		for (const roomId of Array.from(this.roomStatus.keys())) {
 			if (!io.sockets.adapter.rooms.has(roomId)) {
 				this.roomStatus.delete(roomId);
 				this.roomPlayers.delete(roomId);
+				this.roomDifficulty.delete(roomId);
 			}
 		}
 
@@ -93,12 +280,60 @@ export class RoomController {
 				roomId,
 				status,
 				players: io.sockets.adapter.rooms.get(roomId)?.size || 0,
+				difficulty: this.roomDifficulty.get(roomId) || this.DEFAULT_DIFFICULTY,
 			}))
 			.sort();
 	}
 
 	private emitOpenGames(io: Server) {
 		io.emit("open_games", { rooms: this.getRoomsCatalog(io) });
+	}
+
+	private async getAutoWordPool(): Promise<string[]> {
+		if (this.wordPoolCache && this.wordPoolCache.expiresAt > Date.now()) return this.wordPoolCache.words;
+
+		const response = await axios.get(this.WORD_POOL_SOURCE_URL, { timeout: this.DEF_FETCH_TIMEOUT_MS });
+		const content = typeof response.data === "string" ? response.data : "";
+		if (!content) throw new Error("No s'ha pogut carregar el corpus de paraules");
+
+		const words = content
+			.split(/\r?\n/)
+			.map((line) => line.split(",")[0]?.trim().toLowerCase() || "")
+			.filter((word) => /^[a-zà-ÿ·-]+$/i.test(word))
+			.filter((word) => !word.includes(" "))
+			.filter((word) => word.length >= 4 && word.length <= 12)
+			.filter((word) => !this.stopWords.has(word))
+			.filter((word, idx, arr) => arr.indexOf(word) === idx);
+
+		if (words.length < 100) throw new Error("Corpus insuficient després del filtrat");
+
+		this.wordPoolCache = {
+			words,
+			expiresAt: Date.now() + this.WORD_POOL_CACHE_TTL_MS,
+		};
+
+		return words;
+	}
+
+	private pickRandomWords(source: string[], size: number): string[] {
+		const copy = [...source];
+		for (let i = copy.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[copy[i], copy[j]] = [copy[j], copy[i]];
+		}
+		return copy.slice(0, size);
+	}
+
+	private buildCombinedWordPool(primary: string[], fallback: string[]) {
+		return [...primary, ...fallback].filter((word, index, arr) => arr.indexOf(word) === index);
+	}
+
+	private getWordsByDifficulty(pool: string[], difficulty: "easy" | "medium" | "hard") {
+		const total = pool.length;
+		if (total < 30) return pool;
+		if (difficulty === "easy") return pool.slice(0, Math.max(2000, Math.floor(total * 0.25)));
+		if (difficulty === "hard") return pool.slice(Math.floor(total * 0.45));
+		return pool.slice(Math.floor(total * 0.2), Math.floor(total * 0.65));
 	}
 
 	@OnMessage("get_open_games")
@@ -131,6 +366,7 @@ export class RoomController {
 		await socket.join(roomId);
 		this.roomPlayers.set(roomId, { A: "Anònim" });
 		this.roomStatus.set(roomId, "waiting");
+		this.roomDifficulty.set(roomId, this.DEFAULT_DIFFICULTY);
 		socket.emit("room_joined", { roomId, players: 1 });
 		this.emitOpenGames(io);
 	}
@@ -141,81 +377,6 @@ export class RoomController {
 
 		const connectedSockets = io.sockets.adapter.rooms.get(message.roomId);
 		const socketRooms = Array.from(socket.rooms.values()).filter((r) => r !== socket.id);
-		const paraules = [
-			"camí",
-			"rossinyol",
-			"conill",
-			"porró",
-			"repercutir",
-			"emmirallar",
-			"organisme",
-			"setrill",
-			"mussol",
-			"colze",
-			"mànec",
-			"atzucac",
-			"rèmora",
-			"cendrer",
-			"cotó",
-			"esquirol",
-			"esquella",
-			"paràsit",
-			"guerrer",
-			"préssec",
-			"cirera",
-			"insecte",
-			"tropical",
-			"comarca",
-			"tractat",
-			"corona",
-			"reguitzell",
-			"municipi",
-			"localitat",
-			"pantà",
-			"ecumènic",
-			"musical",
-			"reflexionar",
-			"anagrama",
-			"mantell",
-			"república",
-			"vapor",
-			"barretina",
-			"edifici",
-			"cosir",
-			"frustrar",
-			"lleuger",
-			"pregunta",
-			"ametlla",
-			"encens",
-			"sucre",
-			"dolor",
-			"radi",
-			"poma",
-			"genoll",
-			"llebre",
-			"pop",
-			"crustaci",
-			"anell",
-			"cambra",
-			"copular",
-			"gerani",
-			"capsa",
-			"camell",
-			"embarbussament",
-			"rovellola",
-			"espurna",
-			"guisat",
-			"olivada",
-			"vesicant",
-			"esplendor",
-			"taronjada",
-			"sotagola",
-			"gos",
-			"algutzir",
-			"beneit",
-			"ximple",
-			"poca-solta",
-		];
 
 		if (socketRooms.length > 0 || (connectedSockets && connectedSockets.size === 2)) {
 			socket.emit("room_join_error", {
@@ -232,17 +393,32 @@ export class RoomController {
 
 			await socket.join(message.roomId);
 			const roomSize = io.sockets.adapter.rooms.get(message.roomId)?.size || 1;
+			const requestedDifficulty = message?.difficulty;
+			const difficulty: "easy" | "medium" | "hard" =
+				requestedDifficulty === "easy" || requestedDifficulty === "medium" || requestedDifficulty === "hard"
+					? requestedDifficulty
+					: this.DEFAULT_DIFFICULTY;
 			const playerName = String(message.playerName || "Anònim").trim() || "Anònim";
 			const currentPlayers = this.roomPlayers.get(message.roomId) || {};
 			if (!currentPlayers.A) currentPlayers.A = playerName;
 			else if (!currentPlayers.B) currentPlayers.B = playerName;
 			this.roomPlayers.set(message.roomId, currentPlayers);
+			if (!this.roomDifficulty.has(message.roomId)) this.roomDifficulty.set(message.roomId, difficulty);
 			this.roomStatus.set(message.roomId, roomSize >= 2 ? "started" : "waiting");
 			socket.emit("room_joined", { roomId: message.roomId, players: roomSize });
 			this.emitOpenGames(io);
 
 			if (io.sockets.adapter.rooms.get(message.roomId).size === 2) {
-				await this.getPreguntesFromAPI(paraules, message.roomId, socket);
+				io.to(message.roomId).emit("game_preparing", { roomId: message.roomId });
+				let paraules = this.fallbackWords;
+				try {
+					paraules = await this.getAutoWordPool();
+				} catch (error) {
+					console.error("No s'ha pogut carregar el corpus automàtic. S'usarà el fallback local.", error);
+				}
+				const roomDifficulty = this.roomDifficulty.get(message.roomId) || this.DEFAULT_DIFFICULTY;
+				const paraulesPerNivell = this.getWordsByDifficulty(paraules, roomDifficulty);
+				await this.getPreguntesFromAPI(paraulesPerNivell, message.roomId, socket);
 			}
 		}
 	}
@@ -260,29 +436,41 @@ export class RoomController {
 		await socket.leave(roomId);
 		this.roomPlayers.delete(roomId);
 		this.roomStatus.delete(roomId);
+		this.roomDifficulty.delete(roomId);
 		socket.emit("room_cancelled", { roomId });
 		this.emitOpenGames(io);
 	}
 
 	public async getPreguntesFromAPI(paraules: Array<string>, room: string, socket: Socket) {
 		const size = 5;
-		const VParaules = paraules.sort(() => Math.random() - Math.random()).slice(0, size);
-		const settled = await Promise.allSettled(VParaules.map((paraula) => this.fetchDefinitionWithRetry(paraula)));
+		const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
+		const pendingWords = this.pickRandomWords(combinedPool, combinedPool.length);
+		const dades: Array<{ d: { nom: string; descripcio: string } }> = [];
+		const maxAttempts = Math.min(pendingWords.length, 150);
+		let attempts = 0;
 
-		const dades = settled.map((result, index) => {
-			if (result.status === "fulfilled") {
-				return { d: result.value };
+		while (dades.length < size && attempts < maxAttempts) {
+			const word = pendingWords[attempts];
+			attempts += 1;
+			try {
+				const definition = await this.fetchDefinitionWithRetry(word);
+				if (!definition?.nom || !definition?.descripcio) continue;
+				if (/Definició temporalment no disponible/i.test(definition.descripcio)) continue;
+				dades.push({ d: definition });
+			} catch (error) {
+				console.error(`[room:${room}] Definició no disponible per "${word}"`, error);
 			}
+		}
 
-			const fallbackWord = VParaules[index];
-			console.error(`[room:${room}] Definició no disponible per "${fallbackWord}"`, result.reason);
-			return {
-				d: {
-					nom: fallbackWord,
-					descripcio: `Definició temporalment no disponible per a «${fallbackWord}».`,
-				},
-			};
-		});
+		if (dades.length < size) {
+			socket.emit("room_join_error", {
+				error: "No s'han pogut carregar prou definicions vàlides. Torna-ho a provar.",
+			});
+			socket.to(room).emit("room_join_error", {
+				error: "No s'han pogut carregar prou definicions vàlides. Torna-ho a provar.",
+			});
+			return;
+		}
 
 		const players = this.roomPlayers.get(room) || { A: "Jugador A", B: "Jugador B" };
 		const matchId = `${room}-${Date.now()}`;

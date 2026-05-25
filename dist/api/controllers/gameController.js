@@ -1,3 +1,4 @@
+"use strict";
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -11,8 +12,10 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 var GameController_1;
-import { ConnectedSocket, MessageBody, OnMessage, SocketController, SocketIO } from "socket-controllers";
-import { Server, Socket } from "socket.io";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GameController = void 0;
+const socket_controllers_1 = require("socket-controllers");
+const socket_io_1 = require("socket.io");
 let GameController = GameController_1 = class GameController {
     emitWinnersBoard(io) {
         const board = Array.from(GameController_1.winners.entries())
@@ -62,31 +65,31 @@ let GameController = GameController_1 = class GameController {
 GameController.winners = new Map();
 GameController.processedMatches = new Set();
 __decorate([
-    OnMessage("update_game"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
-    __param(2, MessageBody()),
+    socket_controllers_1.OnMessage("update_game"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
+    __param(2, socket_controllers_1.MessageBody()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket, Object]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
     __metadata("design:returntype", Promise)
 ], GameController.prototype, "updateGame", null);
 __decorate([
-    OnMessage("report_match_winner"),
-    __param(0, SocketIO()),
-    __param(1, MessageBody()),
+    socket_controllers_1.OnMessage("report_match_winner"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.MessageBody()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Object]),
+    __metadata("design:paramtypes", [socket_io_1.Server, Object]),
     __metadata("design:returntype", void 0)
 ], GameController.prototype, "reportMatchWinner", null);
 __decorate([
-    OnMessage("get_winners_board"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
+    socket_controllers_1.OnMessage("get_winners_board"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], GameController.prototype, "getWinnersBoard", null);
 GameController = GameController_1 = __decorate([
-    SocketController()
+    socket_controllers_1.SocketController()
 ], GameController);
-export { GameController };
+exports.GameController = GameController;

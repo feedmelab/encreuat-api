@@ -1,3 +1,4 @@
+"use strict";
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -10,8 +11,10 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-import { ConnectedSocket, OnConnect, SocketController, SocketIO } from "socket-controllers";
-import { Socket, Server } from "socket.io";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MainController = void 0;
+const socket_controllers_1 = require("socket-controllers");
+const socket_io_1 = require("socket.io");
 let MainController = class MainController {
     onConnection(socket, io) {
         console.log("Nou Socket conectat: ", socket.id);
@@ -21,14 +24,14 @@ let MainController = class MainController {
     }
 };
 __decorate([
-    OnConnect(),
-    __param(0, ConnectedSocket()),
-    __param(1, SocketIO()),
+    socket_controllers_1.OnConnect(),
+    __param(0, socket_controllers_1.ConnectedSocket()),
+    __param(1, socket_controllers_1.SocketIO()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Socket, Server]),
+    __metadata("design:paramtypes", [socket_io_1.Socket, socket_io_1.Server]),
     __metadata("design:returntype", void 0)
 ], MainController.prototype, "onConnection", null);
 MainController = __decorate([
-    SocketController()
+    socket_controllers_1.SocketController()
 ], MainController);
-export { MainController };
+exports.MainController = MainController;

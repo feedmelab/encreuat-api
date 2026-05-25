@@ -1,10 +1,15 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
 var createError = require("http-errors");
 var express = require("express");
 var path = require("path");
 var cookieParser = require("cookie-parser");
 var logger = require("morgan");
-import * as cors from "cors";
-import "reflect-metadata";
+const cors_1 = __importDefault(require("cors"));
+require("reflect-metadata");
 var indexRouter = require("./routes/index");
 var app = express();
 // view engine setup
@@ -15,7 +20,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
-app.use(cors());
+app.use(cors_1.default());
 app.use("/", indexRouter);
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
@@ -33,4 +38,4 @@ app.use(function (err, req, res, next) {
         status: err?.status || 500,
     });
 });
-export default app;
+exports.default = app;

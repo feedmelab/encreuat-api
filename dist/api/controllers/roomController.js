@@ -1,3 +1,4 @@
+"use strict";
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -10,9 +11,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-import { ConnectedSocket, MessageBody, OnMessage, SocketController, SocketIO } from "socket-controllers";
-import { Server, Socket } from "socket.io";
-import axios from "axios";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RoomController = void 0;
+const socket_controllers_1 = require("socket-controllers");
+const socket_io_1 = require("socket.io");
+const axios_1 = __importDefault(require("axios"));
 let RoomController = class RoomController {
     constructor() {
         this.DEFAULT_DIFFICULTY = "medium";
@@ -237,7 +243,7 @@ let RoomController = class RoomController {
         for (let attempt = 0; attempt <= this.DEF_FETCH_RETRIES; attempt++) {
             try {
                 const url = "https://vilaweb.cat/paraulogic/?diec=" + encodeURIComponent(paraula);
-                const response = await axios.get(url, { timeout: this.DEF_FETCH_TIMEOUT_MS });
+                const response = await axios_1.default.get(url, { timeout: this.DEF_FETCH_TIMEOUT_MS });
                 const htmlSource = typeof response?.data?.d === "string" ? response.data.d : typeof response?.data === "string" ? response.data : "";
                 if (!htmlSource)
                     throw new Error("Resposta sense HTML parsejable");
@@ -281,7 +287,7 @@ let RoomController = class RoomController {
     async getAutoWordPool() {
         if (this.wordPoolCache && this.wordPoolCache.expiresAt > Date.now())
             return this.wordPoolCache.words;
-        const response = await axios.get(this.WORD_POOL_SOURCE_URL, { timeout: this.DEF_FETCH_TIMEOUT_MS });
+        const response = await axios_1.default.get(this.WORD_POOL_SOURCE_URL, { timeout: this.DEF_FETCH_TIMEOUT_MS });
         const content = typeof response.data === "string" ? response.data : "";
         if (!content)
             throw new Error("No s'ha pogut carregar el corpus de paraules");
@@ -453,40 +459,40 @@ let RoomController = class RoomController {
     }
 };
 __decorate([
-    OnMessage("get_open_games"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
+    socket_controllers_1.OnMessage("get_open_games"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], RoomController.prototype, "getOpenGamesList", null);
 __decorate([
-    OnMessage("create_game"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
+    socket_controllers_1.OnMessage("create_game"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket]),
     __metadata("design:returntype", Promise)
 ], RoomController.prototype, "createGame", null);
 __decorate([
-    OnMessage("join_game"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
-    __param(2, MessageBody()),
+    socket_controllers_1.OnMessage("join_game"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
+    __param(2, socket_controllers_1.MessageBody()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket, Object]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
     __metadata("design:returntype", Promise)
 ], RoomController.prototype, "joinGame", null);
 __decorate([
-    OnMessage("cancel_game"),
-    __param(0, SocketIO()),
-    __param(1, ConnectedSocket()),
-    __param(2, MessageBody()),
+    socket_controllers_1.OnMessage("cancel_game"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
+    __param(2, socket_controllers_1.MessageBody()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Server, Socket, Object]),
+    __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket, Object]),
     __metadata("design:returntype", Promise)
 ], RoomController.prototype, "cancelGame", null);
 RoomController = __decorate([
-    SocketController()
+    socket_controllers_1.SocketController()
 ], RoomController);
-export { RoomController };
+exports.RoomController = RoomController;

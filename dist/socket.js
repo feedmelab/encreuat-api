@@ -6,6 +6,6 @@ export default (httpServer) => {
             origin: "*",
         },
     });
-    useSocketServer(io, { controllers: [__dirname + "/api/controllers/*.{js,ts}"] });
+    useSocketServer(io, { controllers: [__dirname + "/api/controllers/*.js"] });
     return io;
 };

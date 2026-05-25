@@ -1,3 +1,4 @@
+import { useSocketServer } from "socket-controllers";
 import { Server } from "socket.io";
 
 export default (httpServer) => {
@@ -6,5 +7,6 @@ export default (httpServer) => {
 			origin: "*",
 		},
 	});
+	useSocketServer(io, { controllers: [__dirname + "/api/controllers/*.js"] });
 	return io;
 };

@@ -2,6 +2,7 @@ import { ConnectedSocket, MessageBody, OnMessage, SocketController, SocketIO } f
 import { Server, Socket } from "socket.io";
 import axios from "axios";
 import { CancelGameMessage, JoinGameMessage } from "../../types/events";
+import { GameController } from "./gameController";
 
 @SocketController()
 export class RoomController {
@@ -302,6 +303,7 @@ export class RoomController {
 				this.roomPlayerSockets.delete(roomId);
 				this.roomStatus.delete(roomId);
 				this.roomDifficulty.delete(roomId);
+				GameController.removeSoloRoom(roomId);
 				continue;
 			}
 			const playerSockets = this.roomPlayerSockets.get(roomId);
@@ -479,6 +481,46 @@ export class RoomController {
 		this.emitOpenGames(io);
 	}
 
+	@OnMessage("create_solo_game")
+	public async createSoloGame(
+		@SocketIO() io: Server,
+		@ConnectedSocket() socket: Socket,
+		@MessageBody() message: { playerName?: string; difficulty?: "easy" | "medium" | "hard" }
+	) {
+		const socketRooms = Array.from(socket.rooms.values()).filter((r) => r !== socket.id);
+		if (socketRooms.length > 0) {
+			socket.emit("room_join_error", {
+				error: "Ja estàs dins d'una sala. Surt-ne abans de crear-ne una altra.",
+			});
+			return;
+		}
+
+		const roomId = this.generateRoomId(io);
+		const requestedDifficulty = message?.difficulty;
+		const difficulty: "easy" | "medium" | "hard" =
+			requestedDifficulty === "easy" || requestedDifficulty === "medium" || requestedDifficulty === "hard"
+				? requestedDifficulty
+				: this.DEFAULT_DIFFICULTY;
+		const playerName = String(message?.playerName || "Anònim").trim() || "Anònim";
+
+		await socket.join(roomId);
+		this.roomPlayers.set(roomId, { A: playerName, B: "Màquina" });
+		this.roomPlayerSockets.set(roomId, { A: socket.id });
+		this.roomStatus.set(roomId, "started");
+		this.roomDifficulty.set(roomId, difficulty);
+		socket.emit("room_joined", { roomId, players: 1 });
+		this.emitOpenGames(io);
+
+		let paraules = this.fallbackWords;
+		try {
+			paraules = await this.getAutoWordPool();
+		} catch (error) {
+			console.error("No s'ha pogut carregar el corpus automàtic. S'usarà el fallback local.", error);
+		}
+		const paraulesPerNivell = this.getWordsByDifficulty(paraules, difficulty);
+		await this.getPreguntesFromAPI(paraulesPerNivell, roomId, socket, io, { solo: true, difficulty });
+	}
+
 	@OnMessage("join_game")
 	public async joinGame(@SocketIO() io: Server, @ConnectedSocket() socket: Socket, @MessageBody() message: JoinGameMessage) {
 		console.log("Nou jugador entrant a la sala: ", message);
@@ -554,11 +596,18 @@ export class RoomController {
 		this.roomPlayerSockets.delete(roomId);
 		this.roomStatus.delete(roomId);
 		this.roomDifficulty.delete(roomId);
+		GameController.removeSoloRoom(roomId);
 		socket.emit("room_cancelled", { roomId });
 		this.emitOpenGames(io);
 	}
 
-	public async getPreguntesFromAPI(paraules: Array<string>, room: string, socket: Socket, io: Server) {
+	public async getPreguntesFromAPI(
+		paraules: Array<string>,
+		room: string,
+		socket: Socket,
+		io: Server,
+		options?: { solo?: boolean; difficulty?: "easy" | "medium" | "hard" }
+	) {
 		const size = 5;
 		const roomDifficulty = this.roomDifficulty.get(room) || this.DEFAULT_DIFFICULTY;
 		const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
@@ -594,6 +643,15 @@ export class RoomController {
 		const players = this.roomPlayers.get(room) || { A: "Jugador A", B: "Jugador B" };
 		const matchId = `${room}-${Date.now()}`;
 		const playerSockets = this.roomPlayerSockets.get(room) || {};
+		const isSolo = !!options?.solo;
+
+		if (isSolo) {
+			GameController.registerSoloRoom(
+				room,
+				options?.difficulty || this.roomDifficulty.get(room) || this.DEFAULT_DIFFICULTY,
+				dades.map((item) => item?.d?.nom || "")
+			);
+		}
 
 		if (playerSockets.A) {
 			io.to(playerSockets.A).emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });

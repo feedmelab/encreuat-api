@@ -19,6 +19,7 @@ exports.RoomController = void 0;
 const socket_controllers_1 = require("socket-controllers");
 const socket_io_1 = require("socket.io");
 const axios_1 = __importDefault(require("axios"));
+const gameController_1 = require("./gameController");
 let RoomController = class RoomController {
     constructor() {
         this.DEFAULT_DIFFICULTY = "medium";
@@ -297,6 +298,7 @@ let RoomController = class RoomController {
                     this.roomPlayerSockets.delete(roomId);
                     this.roomStatus.delete(roomId);
                     this.roomDifficulty.delete(roomId);
+                    gameController_1.GameController.removeSoloRoom(roomId);
                     continue;
                 }
                 const playerSockets = this.roomPlayerSockets.get(roomId);
@@ -457,6 +459,37 @@ let RoomController = class RoomController {
         socket.emit("room_joined", { roomId, players: 1 });
         this.emitOpenGames(io);
     }
+    async createSoloGame(io, socket, message) {
+        const socketRooms = Array.from(socket.rooms.values()).filter((r) => r !== socket.id);
+        if (socketRooms.length > 0) {
+            socket.emit("room_join_error", {
+                error: "Ja estàs dins d'una sala. Surt-ne abans de crear-ne una altra.",
+            });
+            return;
+        }
+        const roomId = this.generateRoomId(io);
+        const requestedDifficulty = message?.difficulty;
+        const difficulty = requestedDifficulty === "easy" || requestedDifficulty === "medium" || requestedDifficulty === "hard"
+            ? requestedDifficulty
+            : this.DEFAULT_DIFFICULTY;
+        const playerName = String(message?.playerName || "Anònim").trim() || "Anònim";
+        await socket.join(roomId);
+        this.roomPlayers.set(roomId, { A: playerName, B: "Màquina" });
+        this.roomPlayerSockets.set(roomId, { A: socket.id });
+        this.roomStatus.set(roomId, "started");
+        this.roomDifficulty.set(roomId, difficulty);
+        socket.emit("room_joined", { roomId, players: 1 });
+        this.emitOpenGames(io);
+        let paraules = this.fallbackWords;
+        try {
+            paraules = await this.getAutoWordPool();
+        }
+        catch (error) {
+            console.error("No s'ha pogut carregar el corpus automàtic. S'usarà el fallback local.", error);
+        }
+        const paraulesPerNivell = this.getWordsByDifficulty(paraules, difficulty);
+        await this.getPreguntesFromAPI(paraulesPerNivell, roomId, socket, io, { solo: true, difficulty });
+    }
     async joinGame(io, socket, message) {
         console.log("Nou jugador entrant a la sala: ", message);
         const connectedSockets = io.sockets.adapter.rooms.get(message.roomId);
@@ -530,10 +563,11 @@ let RoomController = class RoomController {
         this.roomPlayerSockets.delete(roomId);
         this.roomStatus.delete(roomId);
         this.roomDifficulty.delete(roomId);
+        gameController_1.GameController.removeSoloRoom(roomId);
         socket.emit("room_cancelled", { roomId });
         this.emitOpenGames(io);
     }
-    async getPreguntesFromAPI(paraules, room, socket, io) {
+    async getPreguntesFromAPI(paraules, room, socket, io, options) {
         const size = 5;
         const roomDifficulty = this.roomDifficulty.get(room) || this.DEFAULT_DIFFICULTY;
         const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
@@ -570,6 +604,10 @@ let RoomController = class RoomController {
         const players = this.roomPlayers.get(room) || { A: "Jugador A", B: "Jugador B" };
         const matchId = `${room}-${Date.now()}`;
         const playerSockets = this.roomPlayerSockets.get(room) || {};
+        const isSolo = !!options?.solo;
+        if (isSolo) {
+            gameController_1.GameController.registerSoloRoom(room, options?.difficulty || this.roomDifficulty.get(room) || this.DEFAULT_DIFFICULTY, dades.map((item) => item?.d?.nom || ""));
+        }
         if (playerSockets.A) {
             io.to(playerSockets.A).emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });
         }
@@ -594,6 +632,16 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Server, socket_io_1.Socket]),
     __metadata("design:returntype", Promise)
 ], RoomController.prototype, "createGame", null);
+__decorate([
+    socket_controllers_1.OnMessage("create_solo_game"),
+    __param(0, socket_controllers_1.SocketIO()),
+    __param(1, socket_controllers_1.ConnectedSocket()),
+    __param(2, socket_controllers_1.MessageBody()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [socket_io_1.Server,
+        socket_io_1.Socket, Object]),
+    __metadata("design:returntype", Promise)
+], RoomController.prototype, "createSoloGame", null);
 __decorate([
     socket_controllers_1.OnMessage("join_game"),
     __param(0, socket_controllers_1.SocketIO()),

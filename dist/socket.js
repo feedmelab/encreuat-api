@@ -43,6 +43,14 @@ exports.default = (httpServer) => {
                 await roomController.createGame(io, socket);
             }, "create_game");
         });
+        socket.on("create_solo_game", async (message, ack) => {
+            await safe(async () => {
+                console.log("[socket] create_solo_game", socket.id, message);
+                await roomController.createSoloGame(io, socket, message);
+                if (typeof ack === "function")
+                    ack({ ok: true });
+            }, "create_game", ack);
+        });
         socket.on("join_game", async (message, ack) => {
             await safe(async () => {
                 console.log("[socket] join_game", socket.id, message);

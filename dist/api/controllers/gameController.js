@@ -17,6 +17,12 @@ exports.GameController = void 0;
 const socket_controllers_1 = require("socket-controllers");
 const socket_io_1 = require("socket.io");
 let GameController = GameController_1 = class GameController {
+    static registerSoloRoom(roomId, difficulty, answers) {
+        GameController_1.soloRooms.set(roomId, { difficulty, answers });
+    }
+    static removeSoloRoom(roomId) {
+        GameController_1.soloRooms.delete(roomId);
+    }
     emitWinnersBoard(io) {
         const board = Array.from(GameController_1.winners.entries())
             .map(([name, data]) => ({ name, wins: data.wins, points: data.points }))
@@ -30,13 +36,40 @@ let GameController = GameController_1 = class GameController {
     }
     async updateGame(io, socket, message) {
         const gameRoom = this.getSocketGameRoom(socket);
-        socket.to(gameRoom).emit("on_game_update", message);
-        const faseFromState = Number(message?.chances?.[5]?.[0]) || 0;
-        const isLastRoundFinished = message?.chances?.[4]?.every((r) => r !== null) || false;
+        let nextMessage = message;
+        const soloConfig = gameRoom ? GameController_1.soloRooms.get(gameRoom) : null;
+        if (soloConfig && gameRoom) {
+            nextMessage = JSON.parse(JSON.stringify(message));
+            const faseFromState = Number(nextMessage?.chances?.[5]?.[0]) || 0;
+            if (faseFromState >= 0 && faseFromState < 5) {
+                const playerAnswer = nextMessage?.chances?.[faseFromState]?.[0];
+                const botAnswer = nextMessage?.chances?.[faseFromState]?.[1];
+                if (playerAnswer !== null && playerAnswer !== undefined && botAnswer === null) {
+                    const skill = soloConfig.difficulty === "easy" ? 0.2 : soloConfig.difficulty === "hard" ? 0.6 : 0.4;
+                    const isCorrect = Math.random() < skill;
+                    nextMessage.chances[faseFromState][1] = isCorrect ? soloConfig.answers[faseFromState] || "Passo" : "Passo";
+                    const playerTime = Number(nextMessage?.times?.[faseFromState]?.[0]);
+                    const botTimeBase = Number.isFinite(playerTime) && playerTime > 0 ? playerTime : 30;
+                    const swing = soloConfig.difficulty === "easy" ? 12 : soloConfig.difficulty === "hard" ? 5 : 8;
+                    const botTime = Math.max(3, Math.min(60, botTimeBase + (Math.floor(Math.random() * (2 * swing + 1)) - swing)));
+                    nextMessage.times[faseFromState][1] = botTime;
+                    const isCurrentRoundCompleted = nextMessage.chances[faseFromState].every((r) => r !== null);
+                    if (isCurrentRoundCompleted)
+                        nextMessage.chances[5][0] = faseFromState + 1;
+                }
+            }
+            io.to(gameRoom).emit("on_game_update", nextMessage);
+        }
+        else {
+            socket.to(gameRoom).emit("on_game_update", nextMessage);
+        }
+        const faseFromState = Number(nextMessage?.chances?.[5]?.[0]) || 0;
+        const isLastRoundFinished = nextMessage?.chances?.[4]?.every((r) => r !== null) || false;
         const isGameFinished = faseFromState >= 5 || isLastRoundFinished;
         if (isGameFinished && gameRoom) {
-            const payload = { chances: message.chances, times: message.times };
+            const payload = { chances: nextMessage.chances, times: nextMessage.times };
             io.to(gameRoom).emit("game_finished", payload);
+            GameController_1.removeSoloRoom(gameRoom);
         }
     }
     reportMatchWinner(io, message) {
@@ -64,6 +97,7 @@ let GameController = GameController_1 = class GameController {
 };
 GameController.winners = new Map();
 GameController.processedMatches = new Set();
+GameController.soloRooms = new Map();
 __decorate([
     socket_controllers_1.OnMessage("update_game"),
     __param(0, socket_controllers_1.SocketIO()),

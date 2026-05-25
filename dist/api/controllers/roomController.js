@@ -365,6 +365,45 @@ let RoomController = class RoomController {
         const complexityScore = this.getWordComplexity(word);
         return frequencyRankScore * 0.65 + complexityScore * 0.35;
     }
+    isEasyDefinition(definition) {
+        const nom = String(definition?.nom || "").trim().toLowerCase();
+        const desc = String(definition?.descripcio || "").trim().toLowerCase();
+        if (!nom || !desc)
+            return false;
+        if (nom.length > 8)
+            return false;
+        if (desc.length > 115)
+            return false;
+        if ((desc.match(/[;,():]/g) || []).length > 2)
+            return false;
+        if ((desc.match(/\d+/g) || []).length > 0)
+            return false;
+        const technicalKeywords = [
+            "química",
+            "químic",
+            "molècula",
+            "atòmic",
+            "enzim",
+            "isòtop",
+            "biologia",
+            "física",
+            "matemàtica",
+            "geologia",
+            "gramàtica",
+            "lingüística",
+            "anatomia",
+            "farmacol",
+            "patologia",
+            "jurídic",
+            "dret",
+            "teol",
+            "filosof",
+            "botànic",
+            "zool",
+            "mineralogia",
+        ];
+        return !technicalKeywords.some((k) => desc.includes(k));
+    }
     getWordsByDifficulty(pool, difficulty) {
         const total = pool.length;
         if (total < 30)
@@ -496,10 +535,11 @@ let RoomController = class RoomController {
     }
     async getPreguntesFromAPI(paraules, room, socket, io) {
         const size = 5;
+        const roomDifficulty = this.roomDifficulty.get(room) || this.DEFAULT_DIFFICULTY;
         const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
         const pendingWords = this.pickRandomWords(combinedPool, combinedPool.length);
         const dades = [];
-        const maxAttempts = Math.min(pendingWords.length, 150);
+        const maxAttempts = Math.min(pendingWords.length, roomDifficulty === "easy" ? 260 : 150);
         let attempts = 0;
         while (dades.length < size && attempts < maxAttempts) {
             const word = pendingWords[attempts];
@@ -509,6 +549,8 @@ let RoomController = class RoomController {
                 if (!definition?.nom || !definition?.descripcio)
                     continue;
                 if (/Definició temporalment no disponible/i.test(definition.descripcio))
+                    continue;
+                if (roomDifficulty === "easy" && !this.isEasyDefinition(definition))
                     continue;
                 dades.push({ d: definition });
             }

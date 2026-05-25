@@ -14,6 +14,7 @@ export class RoomController {
 		"https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/master/frequencies/frequencies-dict-lemmas.txt";
 	private readonly definitionCache = new Map<string, { nom: string; descripcio: string; expiresAt: number }>();
 	private readonly roomPlayers = new Map<string, { A?: string; B?: string }>();
+	private readonly roomPlayerSockets = new Map<string, { A?: string; B?: string }>();
 	private readonly roomStatus = new Map<string, "waiting" | "started">();
 	private readonly roomDifficulty = new Map<string, "easy" | "medium" | "hard">();
 	private wordPoolCache: { words: string[]; expiresAt: number } | null = null;
@@ -297,14 +298,21 @@ export class RoomController {
 			for (const roomId of joinedRooms) {
 				const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
 				if (size <= 0) {
-					this.roomPlayers.delete(roomId);
-					this.roomStatus.delete(roomId);
-					this.roomDifficulty.delete(roomId);
-					continue;
-				}
-				if (size === 1) {
-					this.roomStatus.set(roomId, "waiting");
-				}
+				this.roomPlayers.delete(roomId);
+				this.roomPlayerSockets.delete(roomId);
+				this.roomStatus.delete(roomId);
+				this.roomDifficulty.delete(roomId);
+				continue;
+			}
+			const playerSockets = this.roomPlayerSockets.get(roomId);
+			if (playerSockets) {
+				if (playerSockets.A === socket.id) delete playerSockets.A;
+				if (playerSockets.B === socket.id) delete playerSockets.B;
+				this.roomPlayerSockets.set(roomId, playerSockets);
+			}
+			if (size === 1) {
+				this.roomStatus.set(roomId, "waiting");
+			}
 			}
 			this.emitOpenGames(io);
 		}, 0);
@@ -386,6 +394,7 @@ export class RoomController {
 		const roomId = this.generateRoomId(io);
 		await socket.join(roomId);
 		this.roomPlayers.set(roomId, { A: "Anònim" });
+		this.roomPlayerSockets.set(roomId, { A: socket.id });
 		this.roomStatus.set(roomId, "waiting");
 		this.roomDifficulty.set(roomId, this.DEFAULT_DIFFICULTY);
 		socket.emit("room_joined", { roomId, players: 1 });
@@ -422,9 +431,16 @@ export class RoomController {
 					: this.DEFAULT_DIFFICULTY;
 			const playerName = String(message.playerName || "Anònim").trim() || "Anònim";
 			const currentPlayers = this.roomPlayers.get(message.roomId) || {};
+			const currentPlayerSockets = this.roomPlayerSockets.get(message.roomId) || {};
 			if (!currentPlayers.A) currentPlayers.A = playerName;
 			else if (!currentPlayers.B) currentPlayers.B = playerName;
+
+			if (currentPlayers.A === playerName && !currentPlayerSockets.A) currentPlayerSockets.A = socket.id;
+			else if (currentPlayers.B === playerName && !currentPlayerSockets.B) currentPlayerSockets.B = socket.id;
+			else if (!currentPlayerSockets.A) currentPlayerSockets.A = socket.id;
+			else if (!currentPlayerSockets.B) currentPlayerSockets.B = socket.id;
 			this.roomPlayers.set(message.roomId, currentPlayers);
+			this.roomPlayerSockets.set(message.roomId, currentPlayerSockets);
 			if (!this.roomDifficulty.has(message.roomId)) this.roomDifficulty.set(message.roomId, difficulty);
 			this.roomStatus.set(message.roomId, roomSize >= 2 ? "started" : "waiting");
 			socket.emit("room_joined", { roomId: message.roomId, players: roomSize });
@@ -440,7 +456,7 @@ export class RoomController {
 				}
 				const roomDifficulty = this.roomDifficulty.get(message.roomId) || this.DEFAULT_DIFFICULTY;
 				const paraulesPerNivell = this.getWordsByDifficulty(paraules, roomDifficulty);
-				await this.getPreguntesFromAPI(paraulesPerNivell, message.roomId, socket);
+				await this.getPreguntesFromAPI(paraulesPerNivell, message.roomId, socket, io);
 			}
 		}
 	}
@@ -457,13 +473,14 @@ export class RoomController {
 
 		await socket.leave(roomId);
 		this.roomPlayers.delete(roomId);
+		this.roomPlayerSockets.delete(roomId);
 		this.roomStatus.delete(roomId);
 		this.roomDifficulty.delete(roomId);
 		socket.emit("room_cancelled", { roomId });
 		this.emitOpenGames(io);
 	}
 
-	public async getPreguntesFromAPI(paraules: Array<string>, room: string, socket: Socket) {
+	public async getPreguntesFromAPI(paraules: Array<string>, room: string, socket: Socket, io: Server) {
 		const size = 5;
 		const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
 		const pendingWords = this.pickRandomWords(combinedPool, combinedPool.length);
@@ -496,8 +513,13 @@ export class RoomController {
 
 		const players = this.roomPlayers.get(room) || { A: "Jugador A", B: "Jugador B" };
 		const matchId = `${room}-${Date.now()}`;
+		const playerSockets = this.roomPlayerSockets.get(room) || {};
 
-		socket.emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });
-		socket.to(room).emit("start_game", { start: false, symbol: "B", room: room, dades, players, matchId });
+		if (playerSockets.A) {
+			io.to(playerSockets.A).emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });
+		}
+		if (playerSockets.B) {
+			io.to(playerSockets.B).emit("start_game", { start: false, symbol: "B", room: room, dades, players, matchId });
+		}
 	}
 }

@@ -29,6 +29,7 @@ let RoomController = class RoomController {
         this.WORD_POOL_SOURCE_URL = "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/master/frequencies/frequencies-dict-lemmas.txt";
         this.definitionCache = new Map();
         this.roomPlayers = new Map();
+        this.roomPlayerSockets = new Map();
         this.roomStatus = new Map();
         this.roomDifficulty = new Map();
         this.wordPoolCache = null;
@@ -293,9 +294,18 @@ let RoomController = class RoomController {
                 const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
                 if (size <= 0) {
                     this.roomPlayers.delete(roomId);
+                    this.roomPlayerSockets.delete(roomId);
                     this.roomStatus.delete(roomId);
                     this.roomDifficulty.delete(roomId);
                     continue;
+                }
+                const playerSockets = this.roomPlayerSockets.get(roomId);
+                if (playerSockets) {
+                    if (playerSockets.A === socket.id)
+                        delete playerSockets.A;
+                    if (playerSockets.B === socket.id)
+                        delete playerSockets.B;
+                    this.roomPlayerSockets.set(roomId, playerSockets);
                 }
                 if (size === 1) {
                     this.roomStatus.set(roomId, "waiting");
@@ -372,6 +382,7 @@ let RoomController = class RoomController {
         const roomId = this.generateRoomId(io);
         await socket.join(roomId);
         this.roomPlayers.set(roomId, { A: "Anònim" });
+        this.roomPlayerSockets.set(roomId, { A: socket.id });
         this.roomStatus.set(roomId, "waiting");
         this.roomDifficulty.set(roomId, this.DEFAULT_DIFFICULTY);
         socket.emit("room_joined", { roomId, players: 1 });
@@ -403,11 +414,21 @@ let RoomController = class RoomController {
                 : this.DEFAULT_DIFFICULTY;
             const playerName = String(message.playerName || "Anònim").trim() || "Anònim";
             const currentPlayers = this.roomPlayers.get(message.roomId) || {};
+            const currentPlayerSockets = this.roomPlayerSockets.get(message.roomId) || {};
             if (!currentPlayers.A)
                 currentPlayers.A = playerName;
             else if (!currentPlayers.B)
                 currentPlayers.B = playerName;
+            if (currentPlayers.A === playerName && !currentPlayerSockets.A)
+                currentPlayerSockets.A = socket.id;
+            else if (currentPlayers.B === playerName && !currentPlayerSockets.B)
+                currentPlayerSockets.B = socket.id;
+            else if (!currentPlayerSockets.A)
+                currentPlayerSockets.A = socket.id;
+            else if (!currentPlayerSockets.B)
+                currentPlayerSockets.B = socket.id;
             this.roomPlayers.set(message.roomId, currentPlayers);
+            this.roomPlayerSockets.set(message.roomId, currentPlayerSockets);
             if (!this.roomDifficulty.has(message.roomId))
                 this.roomDifficulty.set(message.roomId, difficulty);
             this.roomStatus.set(message.roomId, roomSize >= 2 ? "started" : "waiting");
@@ -424,7 +445,7 @@ let RoomController = class RoomController {
                 }
                 const roomDifficulty = this.roomDifficulty.get(message.roomId) || this.DEFAULT_DIFFICULTY;
                 const paraulesPerNivell = this.getWordsByDifficulty(paraules, roomDifficulty);
-                await this.getPreguntesFromAPI(paraulesPerNivell, message.roomId, socket);
+                await this.getPreguntesFromAPI(paraulesPerNivell, message.roomId, socket, io);
             }
         }
     }
@@ -437,12 +458,13 @@ let RoomController = class RoomController {
         }
         await socket.leave(roomId);
         this.roomPlayers.delete(roomId);
+        this.roomPlayerSockets.delete(roomId);
         this.roomStatus.delete(roomId);
         this.roomDifficulty.delete(roomId);
         socket.emit("room_cancelled", { roomId });
         this.emitOpenGames(io);
     }
-    async getPreguntesFromAPI(paraules, room, socket) {
+    async getPreguntesFromAPI(paraules, room, socket, io) {
         const size = 5;
         const combinedPool = this.buildCombinedWordPool(paraules, this.fallbackWords);
         const pendingWords = this.pickRandomWords(combinedPool, combinedPool.length);
@@ -475,8 +497,13 @@ let RoomController = class RoomController {
         }
         const players = this.roomPlayers.get(room) || { A: "Jugador A", B: "Jugador B" };
         const matchId = `${room}-${Date.now()}`;
-        socket.emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });
-        socket.to(room).emit("start_game", { start: false, symbol: "B", room: room, dades, players, matchId });
+        const playerSockets = this.roomPlayerSockets.get(room) || {};
+        if (playerSockets.A) {
+            io.to(playerSockets.A).emit("start_game", { start: true, symbol: "A", room: room, dades, players, matchId });
+        }
+        if (playerSockets.B) {
+            io.to(playerSockets.B).emit("start_game", { start: false, symbol: "B", room: room, dades, players, matchId });
+        }
     }
 };
 __decorate([

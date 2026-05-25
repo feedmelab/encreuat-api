@@ -357,12 +357,52 @@ export class RoomController {
 		return [...primary, ...fallback].filter((word, index, arr) => arr.indexOf(word) === index);
 	}
 
+	private getWordComplexity(word: string) {
+		const normalized = String(word || "").trim().toLowerCase();
+		if (!normalized) return 1;
+
+		const lengthScore = Math.min(1, Math.max(0, (normalized.length - 4) / 8));
+		const accentCount = (normalized.match(/[àèéíïòóúü]/g) || []).length;
+		const accentScore = Math.min(1, accentCount / 2);
+		const hasPuntVolat = normalized.includes("·") ? 1 : 0;
+		const hasHyphenOrApostrophe = /[-’']/.test(normalized) ? 1 : 0;
+
+		return Math.min(
+			1,
+			lengthScore * 0.55 + accentScore * 0.2 + hasPuntVolat * 0.15 + hasHyphenOrApostrophe * 0.1
+		);
+	}
+
+	private getWordDifficultyScore(word: string, index: number, total: number) {
+		const safeTotal = Math.max(total - 1, 1);
+		const frequencyRankScore = index / safeTotal;
+		const complexityScore = this.getWordComplexity(word);
+		return frequencyRankScore * 0.65 + complexityScore * 0.35;
+	}
+
 	private getWordsByDifficulty(pool: string[], difficulty: "easy" | "medium" | "hard") {
 		const total = pool.length;
 		if (total < 30) return pool;
-		if (difficulty === "easy") return pool.slice(0, Math.max(2000, Math.floor(total * 0.25)));
-		if (difficulty === "hard") return pool.slice(Math.floor(total * 0.45));
-		return pool.slice(Math.floor(total * 0.2), Math.floor(total * 0.65));
+
+		const scored = pool
+			.map((word, index) => ({
+				word,
+				score: this.getWordDifficultyScore(word, index, total),
+			}))
+			.sort((a, b) => a.score - b.score);
+
+		const easyEnd = Math.max(1200, Math.floor(total * 0.15));
+		const mediumStart = Math.floor(total * 0.25);
+		const mediumEnd = Math.floor(total * 0.75);
+		const hardStart = Math.floor(total * 0.65);
+
+		if (difficulty === "easy") {
+			const easyCandidates = scored.slice(0, easyEnd).map((item) => item.word);
+			const easyShort = easyCandidates.filter((word) => String(word || "").length <= 7);
+			return easyShort.length >= 50 ? easyShort : easyCandidates;
+		}
+		if (difficulty === "hard") return scored.slice(hardStart).map((item) => item.word);
+		return scored.slice(mediumStart, mediumEnd).map((item) => item.word);
 	}
 
 	@OnMessage("get_open_games")

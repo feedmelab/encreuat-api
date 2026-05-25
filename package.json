@@ -5,7 +5,7 @@
 	"license": "MIT",
 	"scripts": {
 		"start": "nodemon",
-		"build": "tsc"
+		"build": "node ./node_modules/typescript/bin/tsc"
 	},
 	"dependencies": {
 		"axios": "^0.26.1",

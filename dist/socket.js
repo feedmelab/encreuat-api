@@ -16,18 +16,21 @@ exports.default = (httpServer) => {
     io.on("connection", (socket) => {
         console.log("[socket] connected", socket.id);
         mainController.onConnection(socket, io);
-        const safe = async (fn, eventName) => {
+        const safe = async (fn, eventName, ack) => {
             try {
                 await fn();
             }
             catch (error) {
                 console.error(`[socket] ${eventName}:error`, error);
+                const genericError = "Error intern de servidor. Torna-ho a provar.";
                 if (eventName === "join_game" || eventName === "create_game") {
-                    socket.emit("room_join_error", { error: "Error intern de servidor. Torna-ho a provar." });
+                    socket.emit("room_join_error", { error: genericError });
                 }
                 if (eventName === "cancel_game") {
-                    socket.emit("room_cancel_error", { error: "Error intern de servidor. Torna-ho a provar." });
+                    socket.emit("room_cancel_error", { error: genericError });
                 }
+                if (typeof ack === "function")
+                    ack({ ok: false, error: genericError });
             }
         };
         socket.on("get_open_games", () => {
@@ -40,11 +43,13 @@ exports.default = (httpServer) => {
                 await roomController.createGame(io, socket);
             }, "create_game");
         });
-        socket.on("join_game", async (message) => {
+        socket.on("join_game", async (message, ack) => {
             await safe(async () => {
                 console.log("[socket] join_game", socket.id, message);
                 await roomController.joinGame(io, socket, message);
-            }, "join_game");
+                if (typeof ack === "function")
+                    ack({ ok: true, roomId: message?.roomId || "" });
+            }, "join_game", ack);
         });
         socket.on("cancel_game", async (message) => {
             await safe(async () => {
@@ -65,6 +70,9 @@ exports.default = (httpServer) => {
         socket.on("get_winners_board", () => {
             console.log("[socket] get_winners_board", socket.id);
             gameController.getWinnersBoard(io, socket);
+        });
+        socket.on("disconnecting", () => {
+            roomController.handleSocketDisconnecting(io, socket);
         });
         socket.on("disconnect", (reason) => {
             console.log("[socket] disconnect", socket.id, reason);

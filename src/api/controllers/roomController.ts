@@ -289,6 +289,27 @@ export class RoomController {
 		io.emit("open_games", { rooms: this.getRoomsCatalog(io) });
 	}
 
+	public handleSocketDisconnecting(io: Server, socket: Socket) {
+		const joinedRooms = Array.from(socket.rooms.values()).filter((r) => r !== socket.id);
+		if (joinedRooms.length === 0) return;
+
+		setTimeout(() => {
+			for (const roomId of joinedRooms) {
+				const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+				if (size <= 0) {
+					this.roomPlayers.delete(roomId);
+					this.roomStatus.delete(roomId);
+					this.roomDifficulty.delete(roomId);
+					continue;
+				}
+				if (size === 1) {
+					this.roomStatus.set(roomId, "waiting");
+				}
+			}
+			this.emitOpenGames(io);
+		}, 0);
+	}
+
 	private async getAutoWordPool(): Promise<string[]> {
 		if (this.wordPoolCache && this.wordPoolCache.expiresAt > Date.now()) return this.wordPoolCache.words;
 
@@ -384,7 +405,8 @@ export class RoomController {
 			});
 		} else {
 			const roomState = this.roomStatus.get(message.roomId);
-			if (roomState === "started") {
+			const canRejoinStartedRoom = roomState === "started" && (connectedSockets?.size || 0) < 2;
+			if (roomState === "started" && !canRejoinStartedRoom) {
 				socket.emit("room_join_error", {
 					error: `La sala ${message.roomId} ja ha començat la partida.`,
 				});

@@ -188,6 +188,26 @@ let RoomController = class RoomController {
     hasNumericMarkers(value) {
         return /\b\d+\b/.test(String(value || ""));
     }
+    extractSynonymReference(description) {
+        const desc = String(description || "").trim();
+        if (!desc)
+            return null;
+        const cleaned = desc
+            .replace(/[.;:!?]+$/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const synonymPrefix = cleaned.match(/^(sin[oò]nim(?:a)?(?:\s+de)?|veg(?:eu)?\.?)\s+(.+)$/i);
+        if (synonymPrefix?.[2]) {
+            const candidate = synonymPrefix[2]
+                .replace(/^de\s+/i, "")
+                .replace(/^la\s+|^el\s+|^l['’]/i, "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toLowerCase();
+            return /^[a-zà-ÿ·'’ -]{2,}$/iu.test(candidate) ? candidate : null;
+        }
+        return null;
+    }
     isDualGenderForm(word) {
         const parts = String(word || "")
             .toLowerCase()
@@ -200,6 +220,26 @@ let RoomController = class RoomController {
         if (!/^[a-zà-ÿ·'’]+$/u.test(first) || !/^[a-zà-ÿ·'’]+$/u.test(second))
             return false;
         return first.length >= 4 && second.length >= 4 && !first.endsWith("a") && second.endsWith("a");
+    }
+    extractGrammarType(rawDescription) {
+        const head = this
+            .sanitizeHtmlToText(rawDescription)
+            .toLowerCase()
+            .trim()
+            .slice(0, 80);
+        const grammarMap = [
+            { pattern: /\b(v\.|verb|verb transitiu|verb intransitiu)\b/i, label: "Verb" },
+            { pattern: /\b(adj\.|adjectiu)\b/i, label: "Adjectiu" },
+            { pattern: /\b(adj\. i n\.|adjectiu i nom)\b/i, label: "Adjectiu i nom" },
+            { pattern: /\b(nom|substantiu|n\.)\b/i, label: "Nom" },
+            { pattern: /\b(adv\.|adverbi)\b/i, label: "Adverbi" },
+            { pattern: /\b(pron\.|pronom)\b/i, label: "Pronom" },
+            { pattern: /\b(prep\.|preposici[oó])\b/i, label: "Preposició" },
+            { pattern: /\b(conj\.|conjunci[oó])\b/i, label: "Conjunció" },
+            { pattern: /\b(interj\.|interjecci[oó])\b/i, label: "Interjecció" },
+        ];
+        const match = grammarMap.find((item) => item.pattern.test(head));
+        return match?.label;
     }
     extractFieldFromHtml(html) {
         const afterLast = (value, delimiter) => {
@@ -229,18 +269,22 @@ let RoomController = class RoomController {
             .replace(/\d+/g, "")
             .replace(/\s*-\s*/g, "-")
             .trim();
+        const tipus = this.extractGrammarType(rawDescription);
         let descripcio = this.sanitizeHtmlToText(rawDescription);
         descripcio = this.removeDefinitionNumbering(descripcio);
         if (this.isDualGenderForm(nomNet) && !this.hasNumericMarkers(descripcio)) {
             descripcio = `${descripcio} Escriu la resposta amb les dues formes de gènere.`;
         }
-        return { nom: nomNet, descripcio };
+        return { nom: nomNet, descripcio, tipus };
     }
-    async fetchDefinitionWithRetry(paraula) {
+    async fetchDefinitionWithRetry(paraula, depth = 0, visited = new Set()) {
         const cacheKey = paraula.toLowerCase();
         const cached = this.definitionCache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now())
-            return { nom: cached.nom, descripcio: cached.descripcio };
+            return { nom: cached.nom, descripcio: cached.descripcio, tipus: cached.tipus };
+        if (visited.has(cacheKey))
+            throw new Error(`Bucle de sinònims detectat amb ${paraula}`);
+        visited.add(cacheKey);
         let lastError = null;
         for (let attempt = 0; attempt <= this.DEF_FETCH_RETRIES; attempt++) {
             try {
@@ -252,9 +296,22 @@ let RoomController = class RoomController {
                 const parsed = this.extractFieldFromHtml(htmlSource);
                 if (!parsed.nom || !parsed.descripcio)
                     throw new Error("No s'ha pogut extreure definició completa");
+                const synonymRef = this.extractSynonymReference(parsed.descripcio);
+                if (synonymRef && synonymRef !== cacheKey && depth < 2) {
+                    try {
+                        const synonymDefinition = await this.fetchDefinitionWithRetry(synonymRef, depth + 1, visited);
+                        if (synonymDefinition?.descripcio && synonymDefinition.descripcio.length > 8) {
+                            parsed.descripcio = synonymDefinition.descripcio;
+                        }
+                    }
+                    catch (error) {
+                        console.warn(`No s'ha pogut resoldre el sinònim "${synonymRef}" per "${paraula}"`, error);
+                    }
+                }
                 this.definitionCache.set(cacheKey, {
                     nom: parsed.nom,
                     descripcio: parsed.descripcio,
+                    tipus: parsed.tipus,
                     expiresAt: Date.now() + this.DEF_CACHE_TTL_MS,
                 });
                 return parsed;

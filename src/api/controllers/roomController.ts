@@ -277,8 +277,12 @@ export class RoomController {
 			{ pattern: /\binterjecci[oó]\b|\binterj\./i, label: "Interjecció" },
 		];
 
-		const rawHtmlMatch = rawHtmlPatterns.find((item) => item.pattern.test(rawCandidates));
-		if (rawHtmlMatch) return rawHtmlMatch.label;
+		const rawLabels = rawHtmlPatterns.filter((item) => item.pattern.test(rawCandidates)).map((item) => item.label);
+		if (rawLabels.length > 0) {
+			const unique = Array.from(new Set(rawLabels));
+			if (unique.includes("Adjectiu") && unique.includes("Nom")) return "Adjectiu i nom";
+			return unique[0];
+		}
 
 		const head = this
 			.sanitizeHtmlToText(rawDescription)
@@ -298,8 +302,11 @@ export class RoomController {
 			{ pattern: /\b(interj\.|interjecci[oó])\b/i, label: "Interjecció" },
 		];
 
-		const match = grammarMap.find((item) => item.pattern.test(head));
-		return match?.label;
+		const labels = grammarMap.filter((item) => item.pattern.test(head)).map((item) => item.label);
+		const unique = Array.from(new Set(labels));
+		if (unique.includes("Adjectiu i nom")) return "Adjectiu i nom";
+		if (unique.includes("Adjectiu") && unique.includes("Nom")) return "Adjectiu i nom";
+		return unique[0];
 	}
 
 	private extractFieldFromHtml(html: string) {

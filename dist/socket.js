@@ -23,11 +23,12 @@ exports.default = (httpServer) => {
         };
         io.emit("online_users", payload);
     };
+    const buildGuestName = (socketId) => `Convidat-${String(socketId || "").slice(0, 4).toUpperCase()}`;
     const ensureSocketUser = (socketId) => {
         const current = onlineUsers.get(socketId);
         if (current)
             return current;
-        const created = { name: "Anònim", status: "idle" };
+        const created = { name: buildGuestName(socketId), status: "idle" };
         onlineUsers.set(socketId, created);
         return created;
     };
@@ -46,7 +47,7 @@ exports.default = (httpServer) => {
     const getRoomSocketIds = (roomId) => Array.from(io.sockets.adapter.rooms.get(roomId)?.values() || []);
     io.on("connection", (socket) => {
         console.log("[socket] connected", socket.id);
-        onlineUsers.set(socket.id, { name: "Anònim", status: "idle" });
+        onlineUsers.set(socket.id, { name: buildGuestName(socket.id), status: "idle" });
         emitOnlineUsers();
         mainController.onConnection(socket, io);
         const safe = async (fn, eventName, ack) => {
@@ -71,6 +72,10 @@ exports.default = (httpServer) => {
             roomController.getOpenGamesList(io, socket);
         });
         socket.on("get_online_users", () => {
+            emitOnlineUsers();
+        });
+        socket.on("set_online_user", (message) => {
+            setSocketUserName(socket.id, message?.playerName);
             emitOnlineUsers();
         });
         socket.on("create_game", async () => {

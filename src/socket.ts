@@ -25,10 +25,12 @@ export default (httpServer) => {
 		io.emit("online_users", payload);
 	};
 
+	const buildGuestName = (socketId: string) => `Convidat-${String(socketId || "").slice(0, 4).toUpperCase()}`;
+
 	const ensureSocketUser = (socketId: string) => {
 		const current = onlineUsers.get(socketId);
 		if (current) return current;
-		const created = { name: "Anònim", status: "idle" as const };
+		const created = { name: buildGuestName(socketId), status: "idle" as const };
 		onlineUsers.set(socketId, created);
 		return created;
 	};
@@ -50,7 +52,7 @@ export default (httpServer) => {
 
 	io.on("connection", (socket) => {
 		console.log("[socket] connected", socket.id);
-		onlineUsers.set(socket.id, { name: "Anònim", status: "idle" });
+		onlineUsers.set(socket.id, { name: buildGuestName(socket.id), status: "idle" });
 		emitOnlineUsers();
 		mainController.onConnection(socket, io);
 		const safe = async (fn: () => Promise<void> | void, eventName: string, ack?: (payload: any) => void) => {
@@ -75,6 +77,11 @@ export default (httpServer) => {
 		});
 
 		socket.on("get_online_users", () => {
+			emitOnlineUsers();
+		});
+
+		socket.on("set_online_user", (message) => {
+			setSocketUserName(socket.id, message?.playerName);
 			emitOnlineUsers();
 		});
 

@@ -173,6 +173,11 @@ let RoomController = class RoomController {
             .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
             .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
             .replace(/<a\b[^>]*>(.*?)<\/a>/gi, "$1")
+            .replace(/<\/?a\b[^>]*>/gi, " ")
+            .replace(/<\s*href\s*=\s*[^>]+>/gi, " ")
+            .replace(/javascript:[^"'\s>]*/gi, " ")
+            .replace(/getFullAccepcio\s*\([^)]*\)/gi, " ")
+            .replace(/&lt;[^&]*&gt;/gi, " ")
             .replace(/javascript:[^"'\s>]*/gi, " ")
             .replace(/<\/?[^>]+(>|$)/g, " ")
             .replace(/\s+/g, " ")).trim();
@@ -184,6 +189,42 @@ let RoomController = class RoomController {
             .replace(/\b\d+\b/g, " ")
             .replace(/\s+/g, " ")
             .trim();
+    }
+    normalizeForHintCheck(value) {
+        return String(value || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[’']/g, "")
+            .replace(/[^a-z0-9· -]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+    isSingleWordDescription(value) {
+        const words = this
+            .normalizeForHintCheck(value)
+            .split(" ")
+            .filter(Boolean);
+        return words.length <= 1;
+    }
+    containsAnswerInDescription(answer, description) {
+        const answerNorm = this.normalizeForHintCheck(answer);
+        const descNorm = this.normalizeForHintCheck(description);
+        if (!answerNorm || !descNorm)
+            return false;
+        if (descNorm.includes(answerNorm))
+            return true;
+        const descWords = new Set(descNorm.split(" ").map((w) => w.trim()).filter(Boolean));
+        const answerWords = answerNorm
+            .split(/[ -]/)
+            .map((p) => p.trim())
+            .filter((p) => p.length >= 2);
+        return answerWords.some((word) => descWords.has(word));
+    }
+    cleanDescriptionCandidate(raw) {
+        let value = this.sanitizeHtmlToText(raw);
+        value = this.removeDefinitionNumbering(value);
+        return value.trim();
     }
     hasNumericMarkers(value) {
         return /\b\d+\b/.test(String(value || ""));
@@ -221,7 +262,23 @@ let RoomController = class RoomController {
             return false;
         return first.length >= 4 && second.length >= 4 && !first.endsWith("a") && second.endsWith("a");
     }
-    extractGrammarType(rawDescription) {
+    extractGrammarType(rawDescription, fullHtml) {
+        const html = String(fullHtml || "");
+        const descHtml = String(rawDescription || "");
+        const rawCandidates = `${html} ${descHtml}`.toLowerCase();
+        const rawHtmlPatterns = [
+            { pattern: /\bverb\b|\bv\./i, label: "Verb" },
+            { pattern: /\badjectiu\b|\badj\./i, label: "Adjectiu" },
+            { pattern: /\bsubstantiu\b|\bnom\b|\bn\./i, label: "Nom" },
+            { pattern: /\badverbi\b|\badv\./i, label: "Adverbi" },
+            { pattern: /\bpronom\b|\bpron\./i, label: "Pronom" },
+            { pattern: /\bpreposici[oó]\b|\bprep\./i, label: "Preposició" },
+            { pattern: /\bconjunci[oó]\b|\bconj\./i, label: "Conjunció" },
+            { pattern: /\binterjecci[oó]\b|\binterj\./i, label: "Interjecció" },
+        ];
+        const rawHtmlMatch = rawHtmlPatterns.find((item) => item.pattern.test(rawCandidates));
+        if (rawHtmlMatch)
+            return rawHtmlMatch.label;
         const head = this
             .sanitizeHtmlToText(rawDescription)
             .toLowerCase()
@@ -261,17 +318,37 @@ let RoomController = class RoomController {
             .join(" "))
             .replace(",", "")
             .trim();
-        const rawDescription = afterLast(replaced, 'body">')
+        const bodyMatches = Array.from(replaced.matchAll(/class="body"[^>]*>([\s\S]*?)<\/span>/gi)).map((m) => m?.[1] || "");
+        const fallbackDescription = afterLast(replaced, 'body">')
             .split("</span>")[0]
             .trim();
+        const rawCandidates = [...bodyMatches, fallbackDescription].filter(Boolean);
         const nomNet = this.sanitizeHtmlToText(nom)
             .replace(",", "")
             .replace(/\d+/g, "")
             .replace(/\s*-\s*/g, "-")
             .trim();
-        const tipus = this.extractGrammarType(rawDescription);
-        let descripcio = this.sanitizeHtmlToText(rawDescription);
-        descripcio = this.removeDefinitionNumbering(descripcio);
+        const sensePattern = /<span class="tagline"[^>]*>([\s\S]*?)<\/span>\s*(?:<span class="body"[^>]*>[\s\S]*?<\/span>\s*)?<span class="body"[^>]*>([\s\S]*?)<\/span>/gi;
+        const senseCandidates = [];
+        for (const match of Array.from(replaced.matchAll(sensePattern))) {
+            const rawTagline = match?.[1] || "";
+            const rawBody = match?.[2] || "";
+            const descripcio = this.cleanDescriptionCandidate(rawBody);
+            if (!descripcio)
+                continue;
+            if (/Definició temporalment no disponible/i.test(descripcio))
+                continue;
+            const tipus = this.extractGrammarType(rawTagline, rawTagline);
+            senseCandidates.push({ tipus, descripcio });
+        }
+        const cleanedCandidates = rawCandidates
+            .map((candidate) => this.cleanDescriptionCandidate(candidate))
+            .filter(Boolean)
+            .filter((candidate) => !/Definició temporalment no disponible/i.test(candidate))
+            .filter((candidate) => candidate.length >= 10);
+        const primarySense = senseCandidates.find((item) => item.descripcio.length >= 10);
+        let descripcio = primarySense?.descripcio || cleanedCandidates[0] || this.cleanDescriptionCandidate(fallbackDescription);
+        let tipus = primarySense?.tipus || this.extractGrammarType(rawCandidates.join(" "), replaced);
         if (this.isDualGenderForm(nomNet) && !this.hasNumericMarkers(descripcio)) {
             descripcio = `${descripcio} Escriu la resposta amb les dues formes de gènere.`;
         }
@@ -640,6 +717,10 @@ let RoomController = class RoomController {
                 if (!definition?.nom || !definition?.descripcio)
                     continue;
                 if (/Definició temporalment no disponible/i.test(definition.descripcio))
+                    continue;
+                if (this.isSingleWordDescription(definition.descripcio))
+                    continue;
+                if (this.containsAnswerInDescription(definition.nom, definition.descripcio))
                     continue;
                 if (roomDifficulty === "easy" && !this.isEasyDefinition(definition))
                     continue;
